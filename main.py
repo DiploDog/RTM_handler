@@ -1,9 +1,12 @@
+from utils.dms import dms, decimal_degrees
+from utils.profile_processor import ProfileReader
+from utils.error_processing import missing_file
 import os
-import time
 import datetime as dt
 import pandas as pd
 import numpy as np
 import json
+import geopy
 
 
 class NovatelParser:
@@ -28,10 +31,21 @@ class NovatelParser:
     def get_gprmc(self):
         return self.__get_data('$GPRMC', 'gprmc')
 
+    def set_profile(self):
+        prof_path = 'data' + os.sep + 'profileBM.txt'
+        profile = ProfileReader(profile=prof_path, rus=self.rus)
+        return profile
+
+    def headers_loader(self):
+        try:
+            with open('data' + os.sep + 'headers.json', encoding='utf-8') as h:
+                headers = json.load(h)
+                return headers
+        except FileNotFoundError:
+            missing_file(rus=self.rus)
+
     def get_table(self, array2d, data_header=None):
-        with open('data' + os.sep + 'headers.json', encoding='utf-8') as h:
-            headers = json.load(h)
-            print(headers)
+        headers = self.headers_loader()
 
         if data_header == 'gprmc':
             df = pd.DataFrame(array2d, columns=headers['gprmc'])
@@ -39,12 +53,8 @@ class NovatelParser:
             df['utc'] = (utc_time - utc_time[0]).dt.total_seconds()
             df['date'] = self.parse_date(df['date'])
             df['Speed'] = self.knots_to_mps(df['Speed'])
-
-            if not self.rus:
-                df.rename({'Speed': 'Speed, mps',
-                           'utc': 'time, s'}, axis=1, inplace=True)
-                if self.informative:
-                    df.drop(['track_true', 'vat_dir', 'mode_ind', '*xx'], inplace=True, axis=1)
+            df['Latitude'] = self.coord_processing(df['Latitude'], df['Lat_dir'])
+            df['Longitude'] = self.coord_processing(df['Longitude'], df['Long_dir'])
 
             if self.rus:
                 trans_dict = {tag[0]: tag[1] for tag in zip(headers['gprmc'], headers['gprmc_rus'])}
@@ -53,7 +63,12 @@ class NovatelParser:
                     df.drop(['Отклонение от курса',
                              'Магнитное отклонение',
                              'Индикатор системы позиционирования',
-                             '*xx'], inplace=True, axis=1)
+                             '*xx'], axis=1, inplace=True)
+            else:
+                df.rename({'Speed': 'Speed, mps',
+                           'utc': 'time, s'}, axis=1, inplace=True)
+                if self.informative:
+                    df.drop(['track_true', 'vat_dir', 'mode_ind', '*xx'], axis=1, inplace=True)
 
             return df
 
@@ -77,8 +92,12 @@ class NovatelParser:
     def knots_to_mps(column):
         return (column.values.astype('float32') * 0.514444).round(2)
 
+    @staticmethod
+    def coord_processing(coord, direction):
+        return decimal_degrees(*dms(coord, direction))
+
 
 file = NovatelParser('data/0063.data')
 arr = file.get_gprmc()
-arr.to_excel('test_arr_63.xlsx')
-print(arr)
+arr.to_excel('test_arr_64.xlsx')
+#print(arr)
