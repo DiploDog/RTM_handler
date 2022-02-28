@@ -1,6 +1,6 @@
 from utils.dms import dms, decimal_degrees
 from utils.profile_processor import ProfileReader
-from utils.error_processing import missing_file
+from utils.error_messages import missing_file
 import os
 import datetime as dt
 import pandas as pd

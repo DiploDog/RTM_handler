@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
-import copy
+from copy import copy
 from geopy.distance import geodesic
 from sklearn.linear_model import LinearRegression
-from utils.error_processing import missing_file, empty_prof_data
+from utils.error_messages import *
 
 
 class ProfileReader:
@@ -20,6 +20,11 @@ class ProfileReader:
         self.rus = rus
         self.temp_data = []
         self.profile_df = self.get_profile()
+        self.widened_df = None
+        self.obj_psp = None
+
+    def set_widen_df(self):
+        self.widened_df = self.widen_dfs()
 
     def get_profile(self):
         self.read_txt()
@@ -32,6 +37,27 @@ class ProfileReader:
 
         except IndexError:
             empty_prof_data(rus=self.rus)
+
+    def widen_dfs(self):
+        shifted_df = self.shift_df()
+        widened_df = self.profile_df.join(shifted_df, how='left', rsuffix='_след.')
+        return widened_df
+
+    def calculate_slope(self):
+        self.set_widen_df()
+        df = self._get_widened_df()
+        if df is not None:
+            df['Расстояние'] = df.apply(lambda row: PreStartPoint.geodistance(
+                (row['Широта_след.'], row['Долгота_след.']),
+                (row['Широта'], row['Долгота'])), axis=1).round(2)
+            df['Уклон'] = \
+                ((df['Высота_след.'] - df['Высота']) / df['Расстояние']).round(4)
+            self.widened_df = df
+        else:
+            try:
+                raise ValueError
+            except ValueError:
+                no_widened_data(rus=self.rus)
 
     def read_txt(self):
         try:
@@ -51,18 +77,21 @@ class ProfileReader:
         return floated_df
 
     def new_row(self):
-        obj = PreStartPoint(self.profile_df, self.railway_peg)
-        obj.calculate()
-        return pd.DataFrame(data=[[obj.get_height_pred(),
-                                  obj.get_lat_pred(),
-                                  obj.get_long_pred(),
+        self.obj_psp = PreStartPoint(self.profile_df, self.railway_peg)
+        self.obj_psp.calculate()
+        return pd.DataFrame(data=[[self.obj_psp.get_height_pred(),
+                                  self.obj_psp.get_lat_pred(),
+                                  self.obj_psp.get_long_pred(),
                                   self.railway_peg]], columns=list(self.eng_header.keys())[:-1])
 
-    def concat_dfs(self):
-        df_trunc = self.profile_df.copy()
+    def shift_df(self):
+        df_trunc = copy(self.profile_df)
         df_trunc = df_trunc.iloc[1:, :]
         new_df = pd.concat([df_trunc, self.new_row()], axis=0).set_index(np.arange(len(self.profile_df)))
         return new_df
+
+    def _get_widened_df(self):
+        return self.widened_df
 
     # TODO: Расчитать уклоны по profileBM.txt
 
@@ -91,7 +120,6 @@ class PreStartPoint:
         self.height_pred = None
         self.distance_pred = None
         self.coords_score = None
-        self.height_score = None
 
     def __getattr__(self, item):
         self.__dict__[item] = 0
@@ -99,27 +127,22 @@ class PreStartPoint:
 
     def calculate(self):
         self.coords_score = self.predict_coords()
-        self.height_score = self.predict_height()
 
     def predict_coords(self):
         X = self.prof_df['Пикет'].to_numpy().reshape(-1, 1)
-        y = self.prof_df[['Широта', 'Долгота']]
+        y = self.prof_df[['Высота', 'Широта', 'Долгота']]
         reg = LinearRegression().fit(X, y)
         score = reg.score(X, y)
-        self.lat_pred, self.long_pred = reg.predict(np.array([[self.railway_peg]])).round(5)[0]
-        lat_last, long_last = y.iloc[-1, :].values
-        self.distance_pred = round(geodesic((self.lat_pred, self.long_pred), (lat_last, long_last)).m, 3)
+        height, self.lat_pred, self.long_pred = reg.predict(np.array([[self.railway_peg]])).round(5)[0]
+        _, lat_last, long_last = y.iloc[-1, :].values
+        self.height_pred = round(height, 2)
+        self.distance_pred = round(self.geodistance((self.lat_pred, self.long_pred), (lat_last, long_last)), 3)
 
         return score
 
-    def predict_height(self):
-        X = self.prof_df[['Широта', 'Долгота', 'Пикет']].to_numpy()
-        y = self.prof_df['Высота']
-        reg = LinearRegression().fit(X, y)
-        score = reg.score(X, y)
-        self.height_pred = reg.predict(np.array([[self.lat_pred, self.long_pred, self.railway_peg]])).round(2)[0]
-
-        return score
+    @staticmethod
+    def geodistance(point1, point2):
+        return geodesic(point1, point2).m
 
     def get_lat_pred(self):
         return self.lat_pred
@@ -132,9 +155,6 @@ class PreStartPoint:
 
     def get_coords_score(self):
         return self.coords_score
-
-    def get_height_score(self):
-        return self.height_score
 
     def get_height_pred(self):
         return self.height_pred
