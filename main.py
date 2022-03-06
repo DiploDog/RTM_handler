@@ -97,7 +97,7 @@ class NovatelParser:
         return decimal_degrees(*dms(coord, direction))
 
 
-file = NovatelParser('data/0063.data')
+file = NovatelParser('temp/0063.data')
 arr = file.get_gprmc()
-arr.to_excel('test_arr_64.xlsx')
+#arr.to_excel('test_arr_64.xlsx')
 #print(arr)
