@@ -15,8 +15,9 @@ class NovatelParser:
     informative = True
     rus = True
 
-    def __init__(self, file):
+    def __init__(self, file, freq):
         self.file = file
+        self.freq = freq
 
     def __get_data(self, tag, header):
         _data = []
@@ -26,7 +27,7 @@ class NovatelParser:
                     _data.append(line.strip().split(','))
         _data_arr = np.array(_data)
         _data.clear()
-        return self.get_table(_data_arr, header)
+        return self.get_table(_data_arr, self.freq, header)
 
     def get_gprmc(self):
         return self.__get_data('$GPRMC', 'gprmc')
@@ -44,7 +45,7 @@ class NovatelParser:
         except FileNotFoundError:
             missing_file(rus=self.rus)
 
-    def get_table(self, array2d, data_header=None):
+    def get_table(self, array2d, freq, data_header=None):
         headers = self.headers_loader()
 
         if data_header == 'gprmc':
@@ -55,6 +56,8 @@ class NovatelParser:
             df['Speed'] = self.knots_to_mps(df['Speed'])
             df['Latitude'] = self.coord_processing(df['Latitude'], df['Lat_dir'])
             df['Longitude'] = self.coord_processing(df['Longitude'], df['Long_dir'])
+            if freq != 0:
+                df = df[df['utc'] % freq == 0]
 
             if self.rus:
                 trans_dict = {tag[0]: tag[1] for tag in zip(headers['gprmc'], headers['gprmc_rus'])}
@@ -97,7 +100,7 @@ class NovatelParser:
         return decimal_degrees(*dms(coord, direction))
 
 
-file = NovatelParser('temp/0063.data')
-arr = file.get_gprmc()
+#file = NovatelParser('temp/0063.data')
+#arr = file.get_gprmc()
 #arr.to_excel('test_arr_64.xlsx')
 #print(arr)

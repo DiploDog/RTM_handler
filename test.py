@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error as mse
 import numpy as np
+from utils.profile_processor import PreStartPoint
 
 file_name = '0063.data'
 file = ProfileReader('data/profileBM.txt')
@@ -14,7 +15,7 @@ dtfrm = file.widen_dfs()
 slope = file.calculate_slope()
 predicted = file._get_widened_df()
 #print(predicted)
-file = NovatelParser('temp/' + file_name)
+file = NovatelParser('temp/' + file_name, 2)
 arr = file.get_gprmc()
 arr = arr[arr['Время'] < 50.0]
 print(arr)
@@ -40,14 +41,37 @@ def slopes_in_main(arr, help):
 
 
 picet, slpe = slopes_in_main(arr, predicted)
-arr['Пикет'] = picet[:-1]
-arr['Уклон'] = slpe[:-1]
+arr['Пикет'] = picet#[:-1]
+arr['Уклон'] = slpe#[:-1]
 
-arr['dv_dt'] = arr['Скорость'].diff() / arr['Время'].diff()
+arr['dv'] = arr['Скорость'].diff()
+arr['dt'] = arr['Время'].diff()
+#arr['dv_dt'] = arr['Скорость'].diff() / arr['Время'].diff()
+arr['dv_dt'] = arr['dv'] / arr['dt']
 
-arr.fillna(arr['dv_dt'][1], inplace=True)
+arr.fillna(arr.iloc[1, -1], inplace=True)
+arr = arr[arr.dv_dt < 0]
+dv_dt_std = arr.dv_dt.std()
+dv_dt_mean = arr.dv_dt.mean()
+arr = arr[(arr.dv_dt > dv_dt_mean - dv_dt_std) & (arr.dv_dt < dv_dt_mean + dv_dt_std)]
+lat, lon = arr['Широта'].to_numpy() * -1, arr['Долгота'].to_numpy() * -1
 
-print(arr.head(30))
+coords_zipIT = iter(zip(lat, lon))
+first = next(coords_zipIT)
+distnces = []
+try:
+    while coords_zipIT:
+        second = next(coords_zipIT)
+        coord = PreStartPoint.geodistance(first, second)
+        distnces.append(coord)
+        first = second
+except StopIteration:
+    pass
+
+distnces.insert(0, 0)
+arr['distance'] = distnces
+
+print(arr)
 
 
 def generate_degrees(source_data, degree):
@@ -74,17 +98,18 @@ def train_polynomial(degree, data):
     plt.close()
 
 
-train_polynomial(2, arr)
+train_polynomial(1, arr)
 
 arr['Wko'] = (25 * 9.81 * arr['Уклон'] + (25 * (1 + 1.06) * arr.dv_dt)) / 25
 
-plt.plot(arr['Время'], arr['Скорость'])
+plt.scatter(arr['Время'], arr['Скорость'])
 plt.xlabel('Время, с')
 plt.ylabel('Cкорость, м/с')
 plt.title('Зависимость скорости от времени')
 plt.savefig('temp/curves/' + file_name.split('.')[0] + 'v(t)' + '.jpg')
 
 arr.to_excel('test_arr_64.xlsx')
+
 
 # Index(['Тег данных', 'Время, с', 'Корректность данных', 'Широта',
 #        'Ориентация широты', 'Долгота', 'Ориентация долготы', 'Скорость, м/с',
