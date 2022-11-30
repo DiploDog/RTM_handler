@@ -8,16 +8,26 @@ from utils.error_messages import *
 
 class ProfileReader:
 
-    eng_header = {'Высота': 'Height, m',
-                  'Широта': 'Latitude',
-                  'Долгота': 'Longitude',
-                  'Пикет': 'Railway peg',
-                  'Уклон': 'Slope'}
+    eng_header = {
+        'Высота': 'Height, m',
+        'Широта': 'Latitude',
+        'Долгота': 'Longitude',
+        'Пикет': 'Railway peg',
+        'Уклон': 'Slope'
+    }
+
+    rus_header = {
+        'Height': 'Высота',
+        'Latitude': 'Широта',
+        'Longitude': 'Долгота',
+        'Railway_peg': 'Пикет',
+        'Slope': 'Уклон'
+    }
 
     def __init__(self, profile, railway_peg=9.1, rus=True):
         self.profile = profile
         self.railway_peg = railway_peg
-        self.rus = rus
+        self.rus = 'n'
         self.temp_data = []
         self.profile_df = self.get_profile()
         self.widened_df = None
@@ -31,8 +41,10 @@ class ProfileReader:
         try:
             profile_df = self.to_dataframe()
             self.clear_data(self.temp_data)
-            if not self.rus:
+            if self.rus == 'y':
                 profile_df.rename(self.eng_header, axis=1, inplace=True)
+            elif self.rus == 'n':
+                profile_df.rename(self.rus_header, axis=1, inplace=True)
             return profile_df
 
         except IndexError:
@@ -61,7 +73,7 @@ class ProfileReader:
 
     def read_txt(self):
         try:
-            with open(self.profile, mode='r') as f:
+            with open(self.profile, mode='r', encoding='utf-8') as f:
                 for line in f:
                     self.save_data(line, self.temp_data)
 
@@ -93,7 +105,14 @@ class ProfileReader:
     def _get_widened_df(self):
         return self.widened_df
 
-    # TODO: Расчитать уклоны по profileBM.txt
+    def set_profile(self):
+        profile = self.get_profile()
+        if profile['Уклон'][0]:
+            self.set_widen_df()
+            df = self._get_widened_df()
+            return df
+        self.calculate_slope()
+        return self._get_widened_df()
 
     @staticmethod
     def to_float(val):
@@ -107,6 +126,9 @@ class ProfileReader:
     @staticmethod
     def clear_data(temp_data):
         temp_data.clear()
+
+    def get_widened_df(self):
+        return self.widened_df
 
 
 class PreStartPoint:
