@@ -451,8 +451,8 @@ class Handler:
 
     def kalman_filter(self):
         dt = 0.2  # Шаг времени
-        measurementSigma = 10  # Среднеквадратичное отклонение датчика
-        processNoise = 1e-4  # Погрешность модели
+        measurementSigma = 5  # Среднеквадратичное отклонение датчика
+        processNoise = 1e-2  # Погрешность модели
 
         # Создаём объект KalmanFilter (Размер вектора стостояния, размер вектора измерений)
         filter = filterpy.kalman.KalmanFilter(dim_x=2, dim_z=1)
