@@ -89,6 +89,10 @@ class App:
         self.init_menu()
 
     def init_menu(self):
+        """
+        start menu initialization function, that contains:
+        all the Var objects, widgets and packed GUI interface
+        """
         self.root.title(f"Railway cars' resistance to movement handler ({self.version})")
 
         self.rp_default = 'data/best_profileBM.txt'
@@ -98,7 +102,7 @@ class App:
         self.weight_state = IntVar()
         self.weight = StringVar()
 
-
+        # make the frame for the canvas, on which the logos placed
         self.frame = ttk.Frame(self.root)
         self.frame.pack()
         self.frame.config(relief=RIDGE, padding=(15, 15))
@@ -144,6 +148,7 @@ class App:
         ok_button.pack()
 
     def weight_popup(self):
+        # TODO: убрать всплывание новых окон ввода веса при нажатии на RadioButton
         weight_label = Label(self.root, text='Enter car weight, tons:')
         weight_entry = Entry(self.root, textvariable=self.weight, width=20)
         weight_label.pack(), weight_entry.pack()
@@ -184,6 +189,7 @@ class App:
             noimage_exception_label.pack()
 
     def get_input(self):
+        # TODO: обработать все ошибки
         try:
             rp_in = self.railway_profile_var.get()
         except ValueError:
@@ -194,9 +200,11 @@ class App:
             pass
         try:
             kalman_in = self.kalman_var.get()
+            if kalman_in == ' ':
+                raise ValueError
             kalman_in = float(kalman_in)
         except ValueError:
-            pass
+            showinfo("Please, enter the initial acceleration value to initiate Kalman's process matrix")
         try:
             weight_in = self.weight.get()
             weight_in = float(weight_in)
