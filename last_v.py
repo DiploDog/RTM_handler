@@ -1,25 +1,19 @@
 import cv2
 from PIL import Image, ImageTk
+import os
 import pathlib
 from utils.profile_processor import ProfileReader
-from main import NovatelParser
 import numpy as np
-import pandas as pd
 import matplotlib.widgets as wdgt
 import matplotlib.pyplot as plt
-import tkinter as tk
-from tkinter import (StringVar, IntVar, RIDGE, Canvas, Label, Entry, Button, Radiobutton, Tk, ttk)
-from tkinter.messagebox import showinfo, showerror
+from tkinter import (StringVar, IntVar, RIDGE, Canvas, Label, Entry, Button, Radiobutton, Tk, ttk, Menu, Toplevel)
+from tkinter.messagebox import showinfo, showerror, showwarning
 from tkinter.filedialog import askopenfilename
-from utils.profile_processor import PreStartPoint
-from utils.ml import PolyRegression
 from main import NovatelParser
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error as mse
-import seaborn as sns
 import filterpy
 from filterpy import common, kalman
-from geopy.distance import geodesic
 
 
 def generate_degrees(source_data, degree):
@@ -73,7 +67,7 @@ def train_polynomial(x, y, xlabel, ylabel, degree, plot=True):
                 plt.legend()
                 plt.show()
                 ax = plt.axes(projection='3d')
-                ax.plot3D(x.iloc[:,0], x.iloc[:,1], y_pred)
+                ax.plot3D(x.iloc[:, 0], x.iloc[:, 1], y_pred)
                 plt.show()
 
         return model, y_pred, error, coeffs, intercept
@@ -81,7 +75,7 @@ def train_polynomial(x, y, xlabel, ylabel, degree, plot=True):
 
 class App:
 
-    version = 'v.0.0'
+    version = 'v.0.1'
     img = 'logos/main_menu_pic.png'
 
     def __init__(self, root):
@@ -93,6 +87,12 @@ class App:
         start menu initialization function, that contains:
         all the Var objects, widgets and packed GUI interface
         """
+        self.menu = Menu(self.root)
+        self.root.config(menu=self.menu)
+        self.props_menu = Menu(self.menu)
+        self.menu.add_cascade(label='Properties', menu=self.props_menu)
+        self.props_menu.add_command(label='Filter props', command=self.kalman_props_menu)
+
         self.root.title(f"Railway cars' resistance to movement handler ({self.version})")
 
         self.rp_default = 'data/best_profileBM.txt'
@@ -100,7 +100,12 @@ class App:
         self.file_to_process = StringVar()
         self.kalman_var = StringVar()
         self.weight_state = IntVar()
-        self.weight = StringVar()
+        self.weight_var = StringVar()
+        self.weight_label = None
+
+        self.time_step_var = StringVar()
+        self.measurement_std_var = StringVar()
+        self.model_err_var = StringVar()
 
         # make the frame for the canvas, on which the logos placed
         self.frame = ttk.Frame(self.root)
@@ -121,7 +126,7 @@ class App:
 
         kalman_init_label = Label(self.root, text='Enter the initial acceleration value:')
         kalman_init = Entry(self.root, textvariable=self.kalman_var)
-        kalman_init.insert(0, '0.0')
+        kalman_init.insert(0, '-0.0')
 
         rb1 = Radiobutton(self.root,
                           text='freight cond.',
@@ -134,7 +139,8 @@ class App:
                           variable=self.weight_state,
                           command=self.weight_popup)
 
-        ok_button = Button(self.root, text='Ok', command=self.go_to_process)
+        submit_button = Button(self.root, text='Submit', command=self.submit_insert)
+        self.process_button = Button(self.root, text='Process', command=self.go_to_process)
 
         railway_profile_label.pack()
         rp_of_button.pack()
@@ -145,13 +151,50 @@ class App:
         kalman_init_label.pack()
         kalman_init.pack()
         rb1.pack(), rb2.pack()
-        ok_button.pack()
+        submit_button.pack()
+
+    def kalman_props_menu(self):
+        kalman_props_window = Toplevel(self.root)
+        kalman_props_window.title('Kalman filter properties')
+        kalman_props_window.geometry('400x170')
+
+        time_step_label = Label(kalman_props_window, text='Insert a model time step: ')
+        time_step_entry = Entry(kalman_props_window, textvariable=self.time_step_var, width=60)
+        time_step_entry.insert(0, str(0.2))
+
+        measurement_std_label = Label(kalman_props_window, text='Insert a measurement standard deviation: ')
+        measurement_std_entry = Entry(kalman_props_window, textvariable=self.measurement_std_var, width=60)
+        measurement_std_entry.insert(0, str(5))
+
+        model_err_label = Label(kalman_props_window, text='Insert a model error: ')
+        model_err_entry = Entry(kalman_props_window, textvariable=self.model_err_var, width=60)
+        model_err_entry.insert(0, str(0.01))
+        # TODO: сделать кнопку для принятия и передачи в root введенных в props данных
+        ok_button = Button(kalman_props_window, text='Ok', )
+
+        time_step_label.pack(), time_step_entry.pack()
+        measurement_std_label.pack(), measurement_std_entry.pack()
+        model_err_label.pack(), model_err_entry.pack()
+
+    def get_kalman_props(self):
+        try:
+            time_step = self.time_step_var.get()
+            measurement = self.measurement_std_var.get()
+            model_err = self.model_err_var.get()
+            time_step, measurement, model_err = float(time_step), float(measurement), float(model_err)
+        except (ValueError, AttributeError, TypeError):
+            showerror('Wrong Kalman properties', 'Please, enter correct Kalman properties at\n'
+                                                 'Properties -> Filter props.')
+        else:
+            return [time_step, measurement, model_err]
 
     def weight_popup(self):
-        # TODO: убрать всплывание новых окон ввода веса при нажатии на RadioButton
-        weight_label = Label(self.root, text='Enter car weight, tons:')
-        weight_entry = Entry(self.root, textvariable=self.weight, width=20)
-        weight_label.pack(), weight_entry.pack()
+        if self.weight_label is None:
+            self.weight_label = Label(self.root, text='Enter car weight, tons:')
+            weight_entry = Entry(self.root, textvariable=self.weight_var, width=20)
+            self.weight_label.pack(), weight_entry.pack()
+        else:
+            pass
 
     def process_openfile(self):
         curpath = pathlib.Path().resolve()
@@ -178,6 +221,10 @@ class App:
     def display_img(self):
         self.canvas.delete('all')
         try:
+            cwd = os.getcwd()
+            image_folder = os.path.join(cwd, 'logos')
+            if not os.path.isdir(image_folder):
+                os.mkdir(image_folder)
             image_read = cv2.imread(self.img)
             main_image = cv2.cvtColor(image_read, cv2.COLOR_BGR2RGB)
             h, w, _ = main_image.shape
@@ -188,50 +235,97 @@ class App:
             noimage_exception_label = Label(self.root, text='ImageLoader Error: No main menu image was found')
             noimage_exception_label.pack()
 
+    @staticmethod
+    def raise_error_if_none(value):
+        if value == '':
+            raise ValueError
+
+    @staticmethod
+    def wrong_type_error(value, v_type):
+        if not isinstance(value, v_type):
+            raise TypeError
+
     def get_input(self):
-        # TODO: обработать все ошибки
+
         try:
             rp_in = self.railway_profile_var.get()
+            self.wrong_type_error(rp_in, str)
+            self.raise_error_if_none(rp_in)
+        except TypeError:
+            showerror('Wrong value', 'Please, enter correct file path!')
         except ValueError:
-            pass
+            showwarning('No railway data', 'Please, enter a path for a railway data!')
+
         try:
             proc_file_in = self.file_to_process.get()
+            self.wrong_type_error(proc_file_in, str)
+            self.raise_error_if_none(proc_file_in)
+        except TypeError:
+            showerror('Wrong value', 'Please, enter correct file path!')
         except ValueError:
-            pass
+            showwarning('No experiment data', 'Please, enter a path for experiment data!')
+
         try:
             kalman_in = self.kalman_var.get()
-            if kalman_in == ' ':
-                raise ValueError
-            kalman_in = float(kalman_in)
+            try:
+                kalman_in = float(kalman_in)
+            except TypeError:
+                showerror('Wrong value', 'Please, enter correct value!\n'
+                                         'For instance: -0.06')
+            self.raise_error_if_none(kalman_in)
         except ValueError:
-            showinfo("Please, enter the initial acceleration value to initiate Kalman's process matrix")
+            showwarning('No value has been given', 'Please, enter correct value!\n'
+                                                   'For instance: -0.06')
+
+        weight_state_in = self.weight_state.get()
+
+        kalman_props = self.get_kalman_props()
+
         try:
-            weight_in = self.weight.get()
-            weight_in = float(weight_in)
+            weight_in = self.weight_var.get()
+            try:
+                weight_in = float(weight_in)
+            except TypeError:
+                showerror('Wrong value', 'Please, enter correct value!\n'
+                                         'For instance: 100')
+            self.raise_error_if_none(weight_in)
         except ValueError:
-            pass
-        try:
-            weight_state_in = self.weight_state.get()
-        except ValueError:
-            pass
+            showwarning('No value has been given', 'Please, enter correct value!\n'
+                                                   'For instance: 100')
+
         else:
-            return rp_in, proc_file_in, kalman_in, weight_in, weight_state_in
+            return rp_in, proc_file_in, kalman_in, weight_in, weight_state_in, kalman_props
+
+    def submit_insert(self):
+        self.profile, self.file, self.kalman_init, self.weight, self.w_s, self.kalman_props = self.get_input()
+        if any(np.array(
+                [self.profile, self.file, self.kalman_init,
+                 self.weight, self.w_s, self.kalman_props[0],
+                 self.kalman_props[1], self.kalman_props[2]]) == ''):
+            showerror('Not enough data to proceed', 'Please, fill in all the text fields!')
+        else:
+            self.process_button.pack()
 
     def go_to_process(self):
-        profile, file, kalman_init, weight, weight_state = self.get_input()
         self.root.quit()
-        run_handler(profile, file, self.file_to_process, kalman_init, weight, weight_state)
+        run_handler(
+            self.profile, self.file, self.file_to_process,
+            self.kalman_init, self.weight, self.w_s, self.kalman_props
+        )
 
 
 class Handler:
 
-    def __init__(self, profile, file, file_name, kalman_init, weight, weight_state):
+    # TODO: Организовать распаковку kalman_props
+
+    def __init__(self, profile, file, file_name, kalman_init, weight, weight_state, kalman_props):
         self.profile = profile
         self.file = file
         self.file_name = file_name
         self.kalman_init = kalman_init
         self.weight = weight
         self.weight_state = weight_state
+        self.kalman_props = kalman_props
         self.data = None
         self.lower_limit = None
         self.upper_limit = None
@@ -313,6 +407,7 @@ class Handler:
             self.callback = self.RangeCallback(self.ax,
                                                self.lower_limit_line,
                                                self.upper_limit_line)
+
             self.button.on_clicked(self.callback.click_ok)
 
             plt.show()
@@ -320,7 +415,7 @@ class Handler:
         def init_plot(self):
             self.fig, self.ax = plt.subplots()
             plt.subplots_adjust(left=0.1, bottom=0.35)
-            p, = plt.plot(self.data['Время'], self.data['Скорость'])
+            plt.plot(self.data['Время'], self.data['Скорость'])
             plt.xlabel('Время, с')
             plt.ylabel('Cкорость, м/с')
             plt.title('Зависимость скорости от времени')
@@ -329,11 +424,14 @@ class Handler:
 
             slider_ax = self.fig.add_axes([0.20, 0.2, 0.60, 0.03])
             self.slider = wdgt.RangeSlider(ax=slider_ax,
-                                      label="Threshold",
-                                      valmin=self.data['Время'].min(),
-                                      valmax=self.data['Время'].max(),
-                                      valstep=0.2,
-                                      valinit=[self.data['Время'].min() + 10, self.data['Время'].max() - 10])
+                                           label="Threshold",
+                                           valmin=self.data['Время'].min(),
+                                           valmax=self.data['Время'].max(),
+                                           valstep=0.2,
+                                           valinit=[
+                                               self.data['Время'].min() + 10,
+                                               self.data['Время'].max() - 10
+                                           ])
 
             self.lower_limit_line = self.ax.axvline(self.slider.val[0], color='k')
             self.upper_limit_line = self.ax.axvline(self.slider.val[1], color='k')
@@ -374,9 +472,9 @@ class Handler:
                 self.upper_limit_line = upper_limit_line
 
             def click_ok(self, event):
+                self.ax.set_title('The threshold has been successfully set!', color='green')
                 self.upper_limit = self.upper_limit_line.get_data()[0][0]
                 self.lower_limit = self.lower_limit_line.get_data()[0][0]
-                self.ax.set_title('The threshold has been successfully set!', color='green')
 
             def get_limits(self):
                 return self.lower_limit, self.upper_limit
@@ -525,12 +623,17 @@ class Handler:
 
     def save_results(self):
         write_name = self.file_name.get().split('.')[-2] + '_results' + '.xlsx'
-        print(write_name)
+        wn_for_user = '~/' + '/'.join(write_name.split('/')[-3:])
         self.data.to_excel(write_name)
+        showinfo(
+            f'Processing finished',
+            f'The processed data has been saved to\n'
+            f'{wn_for_user}'
+        )
 
 
-def run_handler(profile, file, file_name, kalman_init, weight, weight_state):
-    handler_obj = Handler(profile, file, file_name, kalman_init, weight, weight_state)
+def run_handler(profile, file, file_name, kalman_init, weight, weight_state, kalman_props):
+    handler_obj = Handler(profile, file, file_name, kalman_init, weight, weight_state, kalman_props)
     return handler_obj.run()
 
 
