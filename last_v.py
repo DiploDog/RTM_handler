@@ -2,6 +2,7 @@ import cv2
 from PIL import Image, ImageTk
 import os
 import pathlib
+import tkinter as tk
 from utils.profile_processor import ProfileReader
 import numpy as np
 import matplotlib.widgets as wdgt
@@ -102,6 +103,7 @@ class App:
         self.weight_state = IntVar()
         self.weight_var = StringVar()
         self.weight_label = None
+        self.kalman_props = None
 
         self.time_step_var = StringVar()
         self.measurement_std_var = StringVar()
@@ -140,8 +142,9 @@ class App:
                           command=self.weight_popup)
 
         submit_button = Button(self.root, text='Submit', command=self.submit_insert)
-        self.process_button = Button(self.root, text='Process', command=self.go_to_process)
 
+
+        # TODO: использовать widget.place() для размещения виджетов и лейблов
         railway_profile_label.pack()
         rp_of_button.pack()
         railway_profile_value.pack()
@@ -154,27 +157,31 @@ class App:
         submit_button.pack()
 
     def kalman_props_menu(self):
-        kalman_props_window = Toplevel(self.root)
-        kalman_props_window.title('Kalman filter properties')
-        kalman_props_window.geometry('400x170')
+        self.kalman_props_window = Toplevel(self.root)
+        self.kalman_props_window.title('Kalman filter properties')
+        self.kalman_props_window.geometry('400x170')
 
-        time_step_label = Label(kalman_props_window, text='Insert a model time step: ')
-        time_step_entry = Entry(kalman_props_window, textvariable=self.time_step_var, width=60)
-        time_step_entry.insert(0, str(0.2))
+        time_step_label = Label(self.kalman_props_window, text='Insert a model time step: ')
+        time_step_entry = Entry(self.kalman_props_window, textvariable=self.time_step_var, width=60)
+        if time_step_entry.get() == '':
+            time_step_entry.insert(0, str(0.2))
 
-        measurement_std_label = Label(kalman_props_window, text='Insert a measurement standard deviation: ')
-        measurement_std_entry = Entry(kalman_props_window, textvariable=self.measurement_std_var, width=60)
-        measurement_std_entry.insert(0, str(5))
+        measurement_std_label = Label(self.kalman_props_window, text='Insert a measurement standard deviation: ')
+        measurement_std_entry = Entry(self.kalman_props_window, textvariable=self.measurement_std_var, width=60)
+        if measurement_std_entry.get() == '':
+            measurement_std_entry.insert(0, str(5))
 
-        model_err_label = Label(kalman_props_window, text='Insert a model error: ')
-        model_err_entry = Entry(kalman_props_window, textvariable=self.model_err_var, width=60)
-        model_err_entry.insert(0, str(0.01))
-        # TODO: сделать кнопку для принятия и передачи в root введенных в props данных
-        ok_button = Button(kalman_props_window, text='Ok', )
+        model_err_label = Label(self.kalman_props_window, text='Insert a model error: ')
+        model_err_entry = Entry(self.kalman_props_window, textvariable=self.model_err_var, width=60)
+        if model_err_entry.get() == '':
+            model_err_entry.insert(0, str(0.01))
+
+        ok_button = Button(self.kalman_props_window, text='Ok', command=self.get_kalman_props)
 
         time_step_label.pack(), time_step_entry.pack()
         measurement_std_label.pack(), measurement_std_entry.pack()
         model_err_label.pack(), model_err_entry.pack()
+        ok_button.pack()
 
     def get_kalman_props(self):
         try:
@@ -186,7 +193,10 @@ class App:
             showerror('Wrong Kalman properties', 'Please, enter correct Kalman properties at\n'
                                                  'Properties -> Filter props.')
         else:
-            return [time_step, measurement, model_err]
+            self.kalman_props = time_step, measurement, model_err
+            if self.kalman_props is not None:
+                showinfo('Success!', 'Kalman filter properties has been successfully set!')
+                self.kalman_props_window.destroy()
 
     def weight_popup(self):
         if self.weight_label is None:
@@ -200,7 +210,7 @@ class App:
         curpath = pathlib.Path().resolve()
         filepath = askopenfilename(
             title='Select a file to process',
-            initialdir=curpath,
+            #initialdir=curpath,
             filetypes=[
                 ('.data files', '.data')
             ]
@@ -279,8 +289,6 @@ class App:
 
         weight_state_in = self.weight_state.get()
 
-        kalman_props = self.get_kalman_props()
-
         try:
             weight_in = self.weight_var.get()
             try:
@@ -294,17 +302,23 @@ class App:
                                                    'For instance: 100')
 
         else:
-            return rp_in, proc_file_in, kalman_in, weight_in, weight_state_in, kalman_props
+            return rp_in, proc_file_in, kalman_in, weight_in, weight_state_in, self.kalman_props
 
     def submit_insert(self):
         self.profile, self.file, self.kalman_init, self.weight, self.w_s, self.kalman_props = self.get_input()
-        if any(np.array(
-                [self.profile, self.file, self.kalman_init,
-                 self.weight, self.w_s, self.kalman_props[0],
-                 self.kalman_props[1], self.kalman_props[2]]) == ''):
-            showerror('Not enough data to proceed', 'Please, fill in all the text fields!')
-        else:
-            self.process_button.pack()
+        if self.kalman_props is None:
+            self.kalman_props = [0.2, 10, 1e-2]
+        try:
+            if any(np.array(
+                    [self.profile, self.file, self.kalman_init,
+                     self.weight, self.w_s, self.kalman_props[0],
+                     self.kalman_props[1], self.kalman_props[2]]) == ''):
+                showerror('Not enough data to proceed', 'Please, fill in all the text fields!')
+            else:
+                self.process_button = Button(self.root, text='Process', command=self.go_to_process)
+                self.process_button.pack()
+        except TypeError:
+            showerror('Not enough data to proceed', 'Please, fulfill all the text fields')
 
     def go_to_process(self):
         self.root.quit()
@@ -312,11 +326,10 @@ class App:
             self.profile, self.file, self.file_to_process,
             self.kalman_init, self.weight, self.w_s, self.kalman_props
         )
+        self.process_button.destroy()
 
 
 class Handler:
-
-    # TODO: Организовать распаковку kalman_props
 
     def __init__(self, profile, file, file_name, kalman_init, weight, weight_state, kalman_props):
         self.profile = profile
@@ -495,11 +508,9 @@ class Handler:
             lim = abs(time.shape[0] - self.data.shape[0])
             time = time[:-lim]
         self.data['Время'] = time
-        plt.plot(self.data['Время'], self.data['Скорость'])
-        plt.xlabel('Время, с')
-        plt.ylabel('Cкорость, м/с')
-        plt.title('Зависимость скорости от времени')
-        plt.show()
+        train_polynomial(self.data['Время'],
+                         self.data['Скорость'],
+                         'Время', 'Скорость', 2, True)
 
     def get_data_on_measured_railway(self):
         self.data = self.data[(abs(self.data['Пикет'] % 50) >= 45) | (abs(self.data['Пикет'] % 50) <= 5)]
@@ -556,9 +567,8 @@ class Handler:
         self.data['Время'] = time
 
     def kalman_filter(self):
-        dt = 0.2  # Шаг времени
-        measurementSigma = 5  # Среднеквадратичное отклонение датчика
-        processNoise = 1e-2  # Погрешность модели
+        # Шаг времени, Среднекв. откл. датчика, погрешность модели, Погрешность модели
+        dt, measurementSigma, processNoise = self.kalman_props
 
         # Создаём объект KalmanFilter (Размер вектора стостояния, размер вектора измерений)
         filter = filterpy.kalman.KalmanFilter(dim_x=2, dim_z=1)
