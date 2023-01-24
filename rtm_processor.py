@@ -2,15 +2,15 @@ import cv2
 from PIL import Image, ImageTk
 import os
 import pathlib
-import tkinter as tk
+import tkinter
+from tkinter import (StringVar, IntVar, RIDGE, Canvas, Label, Entry, Button, Radiobutton, Tk, ttk, Menu, Toplevel)
+from tkinter.messagebox import showinfo, showerror, showwarning
+from tkinter.filedialog import askopenfilename
 from utils.profile_processor import ProfileReader
 import numpy as np
 import matplotlib.widgets as wdgt
 import matplotlib.pyplot as plt
-from tkinter import (StringVar, IntVar, RIDGE, Canvas, Label, Entry, Button, Radiobutton, Tk, ttk, Menu, Toplevel)
-from tkinter.messagebox import showinfo, showerror, showwarning
-from tkinter.filedialog import askopenfilename
-from main import NovatelParser
+from novatel_parser import NovatelParser
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error as mse
 import filterpy
@@ -18,12 +18,63 @@ from filterpy import common, kalman
 
 
 def generate_degrees(source_data, degree):
+    """
+    Fitting polynom degree generator.
+
+    Parameters
+    ----------
+    source_data : np.array, iterable
+        data features
+    degree : int
+        degree of fitting polynom
+
+    Returns
+    -------
+    np.array
+        Array, that contains initial and modified source_data of initial shape according to set degree.
+    """
+
     return np.array([
         source_data ** n for n in range(1, degree + 1)
     ]).T
 
 
-def train_polynomial(x, y, xlabel, ylabel, degree, plot=True):
+def train_polynomial(x, y, xlabel='x', ylabel='y', degree=2, plot=True):
+    """
+    Fitting and predicting function.
+
+    Parameters
+    ----------
+    x : np.array, iterable
+        data features
+    y : np.array, iterable
+        data answers
+    xlabel, ylabel : string, default: 'x', 'y'
+        x-, y-axis labels
+    degree : int, default: 2
+        degree of fitting polynom
+    plot : bool, default: True
+        if True: shows the graphs
+
+    Raises
+    ------
+    KeyError
+        If there is no key in existing data.
+
+    Returns
+    -------
+    model : object
+        A LinearRegression object
+    y_pred : np.array
+        Predicted values to the passed data
+    error : float
+        Mean squared error
+    coeffs : array of floats
+        Polynom's coefficients
+    intercept : float
+        independent term of the model
+    """
+
     try:
         X = generate_degrees(x, degree)
     except KeyError:
@@ -75,18 +126,106 @@ def train_polynomial(x, y, xlabel, ylabel, degree, plot=True):
 
 
 class App:
+    """
+    A class of the main application.
+
+    ...
+
+    Parameters
+    ----------
+    self.version : str
+        String that defines the version of this program
+    self.img : str
+        Path to the main menu image
+
+    Attributes
+    ----------
+    root : object
+        Application class object
+    menu : tkinter.Menu
+        Application main menu
+    props_menu : tkinter.Menu
+        Daughter variable of menu for additional menu for Kalman filter properties
+    rp_default : str
+        Path to the railway profile
+    railway_profile_var : tkinter.StringVar
+        Text field for a path to the railway profile file
+    file_to_process : tkinter.StringVar
+        Text field for a path to the file with experimental data
+    kalman_var : tkinter.StringVar
+        Text field for initial value (float) of Kalman filter's initial condition matrix
+    weight_state : tkinter.IntVar
+        State of railway car: 1 - freight, 2 - empty
+    weight_var : tkinter.StringVar
+        The railway car weight value in tons
+    weight_label : NonType
+        Window label for weight_var text field representation. Type defined in weight_popup method: tkinter.Label
+    kalman_props : tuple of floats
+        Kalman filter properties (time step, measurement standard deviation, model error)
+    time_step_var : tkinter.StringVar
+        First Kalman filter property
+    measurement_std_var : tkinter.StringVar
+        Second Kalman filter property
+    model_err_var : tkinter.StringVar
+        Third Kalman filter property
+    frame : tkinter.ttk.Frame
+        Rectangular container for application widgets
+    canvas : tkinter.Canvas
+        Rectangular object for window on which other objects take their places
+    kalman_props_window: tkinter.Toplevel
+        Window for Kalman filter properties entering
+    image_to_display : PIL.ImageTk.PhotoImage
+        pillow object. Image ready to display on canvas
+    profile, file, kalman_init, weight, w_s : str, str, float, float, int
+        Transit values of tkitner Var objects .get() results for
+        railway_profile_var, file_to_process, kalman_var, weight_var, weight_state respectively
+
+    Methods
+    -------
+    init_menu():
+        Start menu initialization method.
+    kalman_props_menu():
+        Kalman filter properties menu initialization function.
+    get_kalman_props():
+        The Kalman properties getter from respective menu window.
+    weight_popup():
+        A popup text field maker for entering the railway car weight.
+    process_openfile():
+        Openfile function for experimental data file.
+    profile_openfile():
+        Openfile function for railway profile data file.
+    display_img():
+        Function for displaying the start menu picture.
+    raise_error_if_none(value : Any):
+        static method : ValueError raiser for the cases when the passed value equals to ''
+    wrong_type_error(value: Any, v_type: Type):
+        static method : TypeError raiser for the cases when the passed value type does not equal to passed v_type
+    get_input():
+        Main menu window input getter.
+    submit_insert():
+        Input values setter as the class attributes nonzero values.
+    go_to_process():
+        A function for staring another class that is needed for calculation demanded values.
+    """
 
     version = 'v.0.1'
     img = 'logos/main_menu_pic.png'
 
     def __init__(self, root):
+        """
+        Initializing application menu constructing.
+
+        Parameters
+        ----------
+        root : object
+        """
+
         self.root = root
         self.init_menu()
 
     def init_menu(self):
         """
-        start menu initialization function, that contains:
-        all the Var objects, widgets and packed GUI interface
+        Start menu initialization method.
         """
         self.menu = Menu(self.root)
         self.root.config(menu=self.menu)
@@ -141,7 +280,7 @@ class App:
                           variable=self.weight_state,
                           command=self.weight_popup)
 
-        submit_button = Button(self.root, text='Submit', command=self.submit_insert)
+        self.submit_button = Button(self.root, text='Submit', command=self.submit_insert)
 
 
         # TODO: использовать widget.place() для размещения виджетов и лейблов
@@ -154,9 +293,12 @@ class App:
         kalman_init_label.pack()
         kalman_init.pack()
         rb1.pack(), rb2.pack()
-        submit_button.pack()
 
     def kalman_props_menu(self):
+        """
+        Kalman filter properties menu initialization function.
+        """
+
         self.kalman_props_window = Toplevel(self.root)
         self.kalman_props_window.title('Kalman filter properties')
         self.kalman_props_window.geometry('400x170')
@@ -184,6 +326,10 @@ class App:
         ok_button.pack()
 
     def get_kalman_props(self):
+        """
+        The Kalman properties getter from respective menu window.
+        """
+
         try:
             time_step = self.time_step_var.get()
             measurement = self.measurement_std_var.get()
@@ -199,15 +345,24 @@ class App:
                 self.kalman_props_window.destroy()
 
     def weight_popup(self):
+        """
+        A popup text field maker for entering the railway car weight.
+        """
+
         if self.weight_label is None:
             self.weight_label = Label(self.root, text='Enter car weight, tons:')
             weight_entry = Entry(self.root, textvariable=self.weight_var, width=20)
             self.weight_label.pack(), weight_entry.pack()
+            self.submit_button.pack()
         else:
             pass
 
     def process_openfile(self):
-        curpath = pathlib.Path().resolve()
+        """
+        Openfile function for experimental data file.
+        """
+
+        # curpath = pathlib.Path().resolve()
         filepath = askopenfilename(
             title='Select a file to process',
             #initialdir=curpath,
@@ -218,6 +373,10 @@ class App:
         self.file_to_process.set(filepath)
 
     def profile_openfile(self):
+        """
+        Openfile function for railway profile data file.
+        """
+
         curpath = pathlib.Path().resolve()
         filepath = askopenfilename(
             title='Select a profile file',
@@ -229,6 +388,10 @@ class App:
         self.railway_profile_var.set(filepath)
 
     def display_img(self):
+        """
+        Function for displaying the start menu picture.
+        """
+
         self.canvas.delete('all')
         try:
             cwd = os.getcwd()
@@ -247,15 +410,63 @@ class App:
 
     @staticmethod
     def raise_error_if_none(value):
+        """
+        ValueError raiser for the cases when the passed value equals to ''
+
+        Parameters
+        ----------
+        value : Any
+            A value that needs to be checked on the equality to ''
+
+        Raises
+        -------
+        ValueError
+            if value is equal to ''
+        """
+
         if value == '':
             raise ValueError
 
     @staticmethod
     def wrong_type_error(value, v_type):
+        """
+        TypeError raiser for the cases when the passed value type does not equal to passed v_type
+
+        Parameters
+        ----------
+        value : Any
+            A value which type needs to be checked on v_type type equality
+        v_type : Type
+            Demanded value type
+
+        Raises
+        -------
+        TypeError
+            If there is discrepancy between value type and v_type
+        """
+
         if not isinstance(value, v_type):
             raise TypeError
 
     def get_input(self):
+        """
+        Main menu window input getter.
+
+        Returns
+        -------
+        rp_in: str
+            Railway profile input value
+        proc_file_in: str
+            Experimental data file input value
+        kalman_in: float
+            Initial (input) value of the Kalman filter's initial condition matrix
+        weight_in: float
+            Railway car weight input value
+        weight_state_in: int
+            State of railway car input value: 1 - freight, 2 - empty
+        self.kalman_props: tuple of floats
+            Kalman filter properties (time step, measurement standard deviation, model error) input values
+        """
 
         try:
             rp_in = self.railway_profile_var.get()
@@ -305,6 +516,10 @@ class App:
             return rp_in, proc_file_in, kalman_in, weight_in, weight_state_in, self.kalman_props
 
     def submit_insert(self):
+        """
+        Input values setter as the class attributes nonzero values.
+        """
+
         self.profile, self.file, self.kalman_init, self.weight, self.w_s, self.kalman_props = self.get_input()
         if self.kalman_props is None:
             self.kalman_props = [0.2, 10, 1e-2]
@@ -321,6 +536,10 @@ class App:
             showerror('Not enough data to proceed', 'Please, fulfill all the text fields')
 
     def go_to_process(self):
+        """
+        A function for staring another class that is needed for calculation demanded values.
+        """
+
         self.root.quit()
         run_handler(
             self.profile, self.file, self.file_to_process,
@@ -330,6 +549,74 @@ class App:
 
 
 class Handler:
+    """
+    Handles all processing calculations and holds the MPL GUI class.
+
+    Attributes
+    ----------
+    profile : str
+        Path to the railway profile
+    file : str
+        Path to the experimental data file
+    file_name : tkinter.StringVar
+        Name of the file to save (part of the file path)
+    kalman_init : float
+        Initial value of the Kalman filter's initial condition matrix
+    weight: float
+        Railway car weight value
+    weight_state: int
+        State of railway car input value: 1 - freight, 2 - empty
+    kalman_props: tuple of floats
+        Kalman filter properties (time step, measurement standard deviation, model error) input values
+    data : pd.DataFrame
+        Modified dataframe of the experimental and calculated data
+    lower_limit : float
+        Lower time limit of the experiment (chose by user)
+    upper_limit : float
+        Upper time limit of the experiment (chose by user)
+
+    Methods
+    -------
+    run():
+        A method that runs all the other methods sequentially.
+    define_profile():
+        Uses ProfileReader class, that performs the preparations
+        and mathing with experimental data and sets the profile attribute as pd.DataFrame.
+    set_data():
+        Uses NovatelParser class that performs the GPS navigator data parsing
+        which returns the dataframe and sets the data class attribute as pd.DataFrame.
+    linearize_profile():
+        Sets the railway peg value due to the measured latitude and longitude
+        for the data dataframe.
+    ur_gruzh(v: float, pd.Series, array): -> float, pd.Series, array
+        Calculates the main resistance to motion (N/t) of the laden gondola car (12-196-01)
+        with the formula obtained with the VNIIZHT experiments and computer models calculations.
+    ur_por(v: float, pd.Series, array): -> float, pd.Series, array
+        Calculates the main resistance to motion (N/t) of the empty gondola car (12-196-01)
+        with the formula obtained with the VNIIZHT experiments and computer models calculations.
+    ptr_gr(v: float, pd.Series, array): -> float, pd.Series, array
+        Calculates the main resistance to motion (N/t) of the laden gondola car (12-196-01)
+        according to the Traction calculation rules for train operation
+    ptr_por(v: float, pd.Series, array): -> float, pd.Series, array
+        Calculates the main resistance to motion (N/t) of the empty gondola car (12-196-01)
+        according to the Traction calculation rules for train operation.
+    set_limits():
+        Runs the additional GU interface for selecting and setting
+        the useful experimental time limits with the MplGUI class.
+    set_railway_params():
+        Railway peg and slope sections setter.
+
+        Cuts the dataframe according to the obtained time limits.
+
+    Subclasses
+    ----------
+    MplGUI
+        The additional GU interface for selecting and setting the useful experimental time limits.
+
+        RangeCallback
+            GUI callback class for submitting and defining
+            the positions of limit lines
+    """
 
     def __init__(self, profile, file, file_name, kalman_init, weight, weight_state, kalman_props):
         self.profile = profile
@@ -344,6 +631,10 @@ class Handler:
         self.upper_limit = None
 
     def run(self):
+        """
+        A method that runs all the other methods sequentially.
+        """
+
         self.define_profile()
         self.set_data()
         self.linearize_profile()
@@ -361,12 +652,27 @@ class Handler:
         self.save_results()
 
     def define_profile(self):
+        """
+        Uses ProfileReader class, that performs the preparations
+        and mathing with experimental data and sets the profile attribute as pd.DataFrame.
+        """
+
         self.profile = ProfileReader(self.profile).set_profile()
 
     def set_data(self):
+        """
+        Uses NovatelParser class that performs the GPS navigator data parsing
+        which returns the dataframe and sets the data class attribute as pd.DataFrame.
+        """
+
         self.data = NovatelParser(self.file, 0).get_gprmc(fltr=False)
 
     def linearize_profile(self):
+        """
+        Sets the railway peg value due to the measured latitude and longitude
+        for the data dataframe.
+        """
+
         lr = LinearRegression()
         x = self.profile[['Широта', 'Долгота']]
         y = self.profile['Пикет']
@@ -375,35 +681,138 @@ class Handler:
 
     @staticmethod
     def ur_gruzh(v):
+        """
+        Calculates the main resistance to motion (N/t) of the laden gondola car (12-196-01)
+        with the formula obtained with the VNIIZHT experiments and computer models calculations.
+
+        Parameters
+        ----------
+        v : float, pd.Series, array
+            Speed of the railway car
+
+        Returns
+        -------
+        float, pd.Series, array
+            The main resistance to motion (N/t) of the laden gondola car (12-196-01)
+        """
+
         return 0.4696 * v ** 2 - 0.2287 * v + 488.13
 
     @staticmethod
     def ur_por(v):
+        """
+        Calculates the main resistance to motion (N/t) of the empty gondola car (12-196-01)
+        with the formula obtained with the VNIIZHT experiments and computer models calculations.
+
+        Parameters
+        ----------
+        v : float, pd.Series, array
+            Speed of the railway car
+
+        Returns
+        -------
+        float, pd.Series, array
+            The main resistance to motion (N/t) of the empty gondola car (12-196-01)
+        """
+
         return 0.5441 * v ** 2 - 2.1127 * v + 244.78
 
     @staticmethod
     def ptr_gr(v):
+        """
+        Calculates the main resistance to motion (N/t) of the laden gondola car (12-196-01)
+        according to the Traction calculation rules for train operation.
+
+        Parameters
+        ----------
+        v : float, pd.Series, array
+            Speed of the railway car
+
+        Returns
+        -------
+        ptr_wko : float, pd.Series, array
+            The main resistance to motion (N/t) of the laden gondola car (12-196-01)
+        """
+
         v = v * 3.6
         ptr = 9.81 * 100 * (0.7 + (3 + 0.09 * v + 0.002 * v ** 2) / 25)
         aero_multi = 0.0611 * v ** 2 + 0.8275 * v
         aero_solo = 0.4384 * v ** 2 - 0.2071 * v
         ptr_wko = ptr - aero_multi + aero_solo
+
         return ptr_wko
 
     @staticmethod
     def ptr_por(v):
+        """
+        Calculates the main resistance to motion (N/t) of the empty gondola car (12-196-01)
+        according to the Traction calculation rules for train operation.
+
+        Parameters
+        ----------
+        v : float, pd.Series, array
+            Speed of the railway car
+
+        Returns
+        -------
+        ptr_wko : float, pd.Series, array
+            The main resistance to motion (N/t) of the empty gondola car (12-196-01)
+        """
+
         v = v * 3.6
         ptr = 9.81 * 25 * (1.0 + 0.044 * v + 0.00021 * v ** 2)
         aero_multi = 0.0637 * v ** 2 + 1.2434 * v
         aero_solo = 0.5218 * v ** 2 - 0.6131 * v
         ptr_wko = ptr - aero_multi + aero_solo
+
         return ptr_wko
 
     def set_limits(self):
+        """
+        Runs the additional GU interface for selecting and setting
+        the useful experimental time limits with the MplGUI class.
+        """
+
         mplgui_object = self.MplGUI(self.data)
         self.lower_limit, self.upper_limit = mplgui_object.get_result()
 
     class MplGUI:
+        """
+        The additional GU interface for selecting and setting the useful experimental time limits.
+
+        Attributes
+        ----------
+        data : pd.DataFrame
+            Modified dataframe of the experimental and calculated data
+        fig, ax : matplotlib.figure.Figure, matplotlib.axes.Axes
+            Respectively: The top level container for all the plot elements;
+                          Contains the figure elements
+        lower_limit_line : NonType object
+            Used to set the matplotlib.lines.Line2D in GUI as the class attribute
+            for the lower time limit
+        upper_limit_line : NonType object
+            Used to set the matplotlib.lines.Line2D in GUI as the class attribute
+            for the upper time limit
+        slider : matplotlib.widgets.RangeSlider
+            Interactive slider object to choose the time range
+        button : matplotlib.widgets.Button
+            Used for setting the slider lower and upper limits values
+        callback : Handler.MplGUI.RangeCallback
+            Used for getting the callback of the GUI and user interaction
+
+        Methods
+        -------
+        init_plot():
+            Plots the initial speed vs time graph.
+        create_widgets():
+            Method which creates the widgets: range slider and submit button.
+        update_slider(val: tuple, list, iterable):
+            Slider lines updater.
+        create_button():
+            Creates the submit button.
+        get_result(): -> tuple of floats
+            Lower and upper lines getter (interacts with callback method)
+        """
 
         def __init__(self, data):
             self.data = data
@@ -426,6 +835,10 @@ class Handler:
             plt.show()
 
         def init_plot(self):
+            """
+            Plots the initial speed vs time graph.
+            """
+
             self.fig, self.ax = plt.subplots()
             plt.subplots_adjust(left=0.1, bottom=0.35)
             plt.plot(self.data['Время'], self.data['Скорость'])
@@ -434,6 +847,9 @@ class Handler:
             plt.title('Зависимость скорости от времени')
 
         def create_widgets(self):
+            """
+            Method which creates the widgets: range slider and submit button.
+            """
 
             slider_ax = self.fig.add_axes([0.20, 0.2, 0.60, 0.03])
             self.slider = wdgt.RangeSlider(ax=slider_ax,
@@ -455,6 +871,15 @@ class Handler:
             self.slider.on_changed(self.update_slider)
 
         def update_slider(self, val):
+            """
+            Slider lines updater.
+
+            Parameters
+            ----------
+            val : tuple, list, iterable
+                The x value of the graph coordinates
+            """
+
             # The val passed to a callback by the RangeSlider will
             # be a tuple of (min, max)
 
@@ -465,6 +890,10 @@ class Handler:
             self.fig.canvas.draw_idle()
 
         def create_button(self):
+            """
+            Creates the submit button.
+            """
+
             button_ax = self.fig.add_axes([0.75, 0.1, 0.2, 0.05])
             self.button = wdgt.Button(ax=button_ax,
                                       label='button',
@@ -473,10 +902,49 @@ class Handler:
                                       )
 
         def get_result(self):
+            """
+            Lower and upper lines getter (interacts with callback method)
+
+            Returns
+            -------
+            ll : float
+                Lower limit lime position (x)
+            ul : float
+                Upper limit lime position (x)
+            """
+
             ll, ul = self.callback.get_limits()
             return ll, ul
 
         class RangeCallback:
+            """
+            GUI callback class for submitting and defining
+            the positions of limit lines
+
+            Parameters
+            ----------
+            self.upper_limit : int, float
+                Initial upper limit value
+            self.upper_limit : int, float
+                Initial upper limit value
+
+            Attributes
+            ----------
+            ax : matplotlib.axes.Axes
+                Figure elements container
+            lower_limit_line : matplotlib.lines.Line2D
+                Lower limit line position display
+            upper_limit_line : matplotlib.lines.Line2D
+                Upper limit line position display
+
+            Methods
+            -------
+            click_ok(event: result of user and mpl interaction):
+                Set the final tuple of limits values by user if ok button clicked
+            get_limits(): -> tuple of floats
+                Limit values getter
+            """
+
             upper_limit, lower_limit = 0, 0
 
             def __init__(self, ax, lower_limit_line, upper_limit_line):
@@ -485,24 +953,53 @@ class Handler:
                 self.upper_limit_line = upper_limit_line
 
             def click_ok(self, event):
+                """
+                Set the final tuple of limits values by user if ok button clicked
+
+                Parameters
+                ----------
+                event : result of user and mpl interaction
+
+                """
                 self.ax.set_title('The threshold has been successfully set!', color='green')
                 self.upper_limit = self.upper_limit_line.get_data()[0][0]
                 self.lower_limit = self.lower_limit_line.get_data()[0][0]
 
             def get_limits(self):
+                """
+                Limit values getter
+
+                Returns
+                -------
+                tuple of floats:
+                    Limit values
+                """
                 return self.lower_limit, self.upper_limit
 
     def set_railway_params(self):
+        """
+        Railway peg and slope sections setter.
+        """
+
         picet, slpe, df_len = NovatelParser.slopes_in_main(self.data, self.profile)
         self.data = self.data.copy().iloc[len(self.data) - df_len:]
         self.data['Пикет'] = picet
         self.data['Уклон'] = slpe
 
     def cut_on_limits(self):
+        """
+        Cuts the dataframe according to the obtained time limits.
+        """
+
         self.data = self.data[(self.data['Время'] >= self.lower_limit) &
                               (self.data['Время'] < self.upper_limit)]
 
     def plot_cut(self):
+        """
+        Proper dataframe cutter with the time fitter
+        Also plots the informative approximation of speed vs time 2th polynom
+        """
+
         time = np.arange(0, self.data.shape[0] * 0.2, 0.2)
         if time.shape[0] > self.data.shape[0]:
             lim = abs(time.shape[0] - self.data.shape[0])
@@ -513,9 +1010,19 @@ class Handler:
                          'Время', 'Скорость', 2, True)
 
     def get_data_on_measured_railway(self):
+        """
+        Cuts the data by only true railway peg or half-peg values
+        """
+
         self.data = self.data[(abs(self.data['Пикет'] % 50) >= 45) | (abs(self.data['Пикет'] % 50) <= 5)]
 
     def calc_n_drop(self):
+        """
+        Calculates the differences between passed distance in sequential rows of dataframe,
+        calculates the cumulative sum of sequentially passed distance pieces by rows,
+        drops the useless for future processing columns.
+        """
+
         self.data['pic_diff'] = self.data['Пикет'].diff()
         self.data.dropna(inplace=True)
         self.data['pic_cum'] = self.data['pic_diff'].cumsum()
@@ -530,6 +1037,10 @@ class Handler:
                                 'Уклон'])
 
     def heights_and_params(self):
+        """
+        Matching heights with the position of the railway
+        """
+
         crop_list = []
         height_list = []
         for i, pic_exp in enumerate(self.data['Пикет']):
@@ -543,12 +1054,23 @@ class Handler:
         self.data['Высота'] = height_list
 
     def ptr_comparison(self):
+        """
+        Adds the main resistance value according to
+        the Traction calculation rules for train operation and the car weight state:
+        Laden if weight_state = 1,
+        Empty if weight_state = 2.
+        """
+
         if self.weight_state == 1:
             self.data['Wko_ptr'] = self.data['Скорость'].apply(self.ptr_gr)
         elif self.weight_state == 2:
             self.data['Wko_ptr'] = self.data['Скорость'].apply(self.ptr_por)
 
     def calculate_values(self):
+        """
+        Calculates the auxiliary values
+        """
+
         self.data['Расстояние'] = self.data['Пикет'].diff()
         self.data = self.data[self.data['Расстояние'] > 10]
         self.data.dropna(inplace=True)
@@ -567,41 +1089,45 @@ class Handler:
         self.data['Время'] = time
 
     def kalman_filter(self):
-        # Шаг времени, Среднекв. откл. датчика, погрешность модели, Погрешность модели
+        """
+        Method for Kalman's filter implementation
+        """
+
+        # time step, sensor's standard deviation, model error
         dt, measurementSigma, processNoise = self.kalman_props
 
-        # Создаём объект KalmanFilter (Размер вектора стостояния, размер вектора измерений)
+        # creating the KalmanFilter object (Shape of state vector, Shape of measure vector)
         filter = filterpy.kalman.KalmanFilter(dim_x=2, dim_z=1)
 
-        # F - матрица процесса - размер dim_x на dim_x - 3х3
+        # F - process matrix with the shape of (dim_x, dim_x)
         filter.F = np.array([[1, dt],
                              [0, 1]])
 
-        # Матрица наблюдения - dim_z на dim_x - 1x3
+        # Observation matrix with the shape of (dim_z, dim_x)
         filter.H = np.array([[1.0, 0.0]])
 
-        # Ковариационная матрица ошибки модели
+        # Covariance matrix of model's error
         filter.Q = filterpy.common.Q_discrete_white_noise(dim=2, dt=dt, var=processNoise)
 
-        # Ковариационная матрица ошибки измерения - 1х1
+        # Covariance matrix of measuring error (1, 1)
         filter.R = np.array([[measurementSigma * measurementSigma]])
 
-        # Начальное состояние.
+        # Initial condition
         filter.x = np.array([self.kalman_init, 0.0])
 
-        # Ковариационная матрица для начального состояния
+        # Covariance matrix of initial condition
         filter.P = np.array([[10.0, 0.0],
                              [0.0, 10.0]])
 
         filteredState = []
         stateCovarianceHistory = []
 
-        # Обработка данных
+        # data processing
         for i in range(0, self.data.shape[0]):
             self.data = self.data.astype('float64')
-            z = [list(self.data['Ускорение'])[i]]  # Вектор измерений
-            filter.predict()  # Этап предсказания
-            filter.update(z)  # Этап коррекции
+            z = [list(self.data['Ускорение'])[i]]  # Measuring vector
+            filter.predict()  # Prediction
+            filter.update(z)  # Correction
 
             filteredState.append(filter.x)
             stateCovarianceHistory.append(filter.P)
@@ -609,7 +1135,7 @@ class Handler:
         filteredState = np.array(filteredState)
         stateCovarianceHistory = np.array(stateCovarianceHistory)
 
-        # Визуализация
+        # Visualization
         plt.title("Kalman filter (2nd order)")
         plt.plot(self.data['Скорость'], self.data['Ускорение'], label="Измерение", color="#99AAFF")
         plt.plot(self.data['Скорость'], filteredState[:, 0], label="Оценка фильтра", color="#224411")
@@ -620,6 +1146,15 @@ class Handler:
         self.data['Ускорение'] = filteredState[:, 0]
 
     def finishing_touches(self):
+        """
+        Calculates and adds the column with the main resistance to motion of the railway car
+        due to the experimental data
+        Adds the main resistance value according to the formula obtained with
+        the VNIIZHT experiments and computer models calculations and the car weight state:
+        Laden if weight_state = 1,
+        Empty if weight_state = 2.
+        """
+
         self.weight = float(self.weight)
         self.data['Wko'] = - 1.06 * 1000 * self.data['Ускорение'] * self.weight
         self.data['Скорость'] = self.data['Скорость'] * 3.6
@@ -632,6 +1167,10 @@ class Handler:
         self.data.dropna(inplace=True)
 
     def save_results(self):
+        """
+        Saves the calculation results in excel file for further processing if needed
+        """
+
         write_name = self.file_name.get().split('.')[-2] + '_results' + '.xlsx'
         wn_for_user = '~/' + '/'.join(write_name.split('/')[-3:])
         self.data.to_excel(write_name)
@@ -643,6 +1182,32 @@ class Handler:
 
 
 def run_handler(profile, file, file_name, kalman_init, weight, weight_state, kalman_props):
+    """
+    Runs the data processing with all the GUIs
+
+    Parameters
+    ----------
+    profile : str
+        Path to the railway profile
+    file : str
+        Path to the experimental data file
+    file_name : tkinter.StringVar
+        Name of the file to save (part of the file path)
+    kalman_init : float
+        Initial value of the Kalman filter's initial condition matrix
+    weight : float
+        Railway car weight value
+    weight_state : int
+        State of railway car input value: 1 - freight, 2 - empty
+    kalman_props : tuple of floats
+        Kalman filter properties (time step, measurement standard deviation, model error) input values
+
+    Returns
+    -------
+    None
+        Runs the processing method of Handler class
+    """
+
     handler_obj = Handler(profile, file, file_name, kalman_init, weight, weight_state, kalman_props)
     return handler_obj.run()
 
