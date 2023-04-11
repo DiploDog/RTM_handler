@@ -208,7 +208,7 @@ class App:
         A function for staring another class that is needed for calculation demanded values.
     """
 
-    version = 'v.0.1'
+    version = 'v.0.2'
     img = 'logos/main_menu_pic.png'
 
     def __init__(self, root):
@@ -1145,6 +1145,10 @@ class Handler:
         self.data['Несглаженное ускорение'] = self.data['Ускорение']
         self.data['Ускорение'] = filteredState[:, 0]
 
+    @staticmethod
+    def construct_equation(v, a, b):
+        return a * v**2 + b * v
+
     def finishing_touches(self):
         """
         Calculates and adds the column with the main resistance to motion of the railway car
@@ -1157,12 +1161,23 @@ class Handler:
 
         self.weight = float(self.weight)
         self.data['Wko'] = - 1.06 * 1000 * self.data['Ускорение'] * self.weight
+
         self.data['Скорость'] = self.data['Скорость'] * 3.6
 
         if self.weight_state == 1:
             self.data['othcet'] = self.data['Скорость'].apply(self.ur_gruzh)
+            self.data['Wko_v_sostave'] = self.data['Wko'] - \
+                                         self.data['Скорость'].apply(
+                                             lambda x: self.construct_equation(x, 0.4384, -0.2071)) + \
+                                         self.data['Скорость'].apply(
+                                             lambda x: self.construct_equation(x, 0.0611, 0.8275))
         elif self.weight_state == 2:
             self.data['othcet'] = self.data['Скорость'].apply(self.ur_por)
+            self.data['Wko_v_sostave'] = self.data['Wko'] - \
+                                         self.data['Скорость'].apply(
+                                             lambda x: self.construct_equation(x, 0.5218, -0.6131)) + \
+                                         self.data['Скорость'].apply(
+                                             lambda x: self.construct_equation(x, 0.0637, 1.2434))
 
         self.data.dropna(inplace=True)
 
